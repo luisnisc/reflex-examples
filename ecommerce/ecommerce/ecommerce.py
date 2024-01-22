@@ -10,6 +10,7 @@ import pandas as pd
 
 SEARCH_LABELS = {
     "input_name": "Name",
+    "input_name_delete": "Name",
     "input_qty": "Quantity",
     "input_price": "Unit Price",
 }
@@ -32,6 +33,7 @@ class Product(rx.Base):
     created_at: str
 
     def __init__(self, row):
+        created_at_format = datetime.now().strftime('%Y-%m-%d %H:%M')
         name = row.get("name") or row.get("input_name")
         qty = row.get("quantity") or int(row.get("input_qty"))
         price = row.get("price") or float(row.get("input_price"))
@@ -39,7 +41,7 @@ class Product(rx.Base):
             name=name,
             quantity=qty,
             price=price,
-            created_at=datetime.now().isoformat(),
+            created_at=created_at_format,
         )
 
     def sum_value(self):
@@ -50,6 +52,7 @@ class State(rx.State):
     """The app state."""
 
     input_name: str = ""
+    input_name_delete: str = ""
     input_qty: int = 0
     input_price: float = 0.0
 
@@ -70,13 +73,13 @@ class State(rx.State):
             self.products = [Product(row) for row in data]
 
     def dump_products(self):
-        with open("product.json", mode="w") as product_file:
-            ic("fake serialization")
-
+        with open('products.json', 'w') as f:
+            json.dump([product.__dict__ for product in self.products], f, indent=4)
+            
     @rx.var
     def product_data(self) -> list[list]:
         return [
-            [p.name, p.quantity, f"${p.price}", p.created_at]
+            [p.name, p.quantity, f"{p.price}€", p.created_at]
             for p in self.products
             if self.search_input.lower() in p.name.lower()
         ]
@@ -101,14 +104,37 @@ class State(rx.State):
 
         if not invalid:
             self.products.append(Product(form_data))
+            self.save_products()
             for field in form_data.keys():
                 yield rx.set_value(field, "")
 
+    def save_products(self):
+        with open("products.json", "w") as product_file:
+            data = [product.__dict__ for product in self.products]
+            json.dump(data, product_file)
+
     def export(self):
-        df = pd.DataFrame(self.product_data)
-        self.export_path = rx.get_asset_path("data.csv")
-        df.to_csv(rx.get_asset_path("data.csv"))
-        yield rx.download("")
+        data = [product.__dict__ for product in self.products]
+        df = pd.DataFrame(data)
+        df.to_csv('products.csv', index=False)
+        print("Data exported to products.csv")
+    
+    def delete_product(self, form_data: dict):
+        ic("delete product", form_data)
+        invalid = False
+        for field in form_data.keys():
+            ic(
+                field,
+            )
+        if not invalid:
+            for product in self.products:
+                if product.name == form_data.get("input_name_delete"):
+                    self.products.remove(product)
+                    self.save_products()
+                    for field in form_data.keys():
+                        yield rx.set_value(field, "")
+                    break
+
 
 
 def inventory():
@@ -118,8 +144,10 @@ def inventory():
         rx.spacer(),
         rx.icon(tag="search"),
         rx.input(
-            placeholder="Search by name", width="20%", on_change=State.set_search_input
+            placeholder="Search by name", width="20%", on_change=State.set_search_input,
+            background="#edf2f7"
         ),
+        
         width=FULL,
     )
     table = rx.data_table(
@@ -171,27 +199,69 @@ def add_item():
                     align="right",
                 ),
                 padding="15px",
-                border="black solid 1px",
+                border="#e2e8f0 solid 2px",
+                borderRadius="10px",
+                background="white"
             ),
-            rx.hstack(rx.spacer(), rx.button("Add Product", type_="submit")),
+            rx.hstack(rx.spacer(), rx.button("Add Product", type_="submit"), class_name="mt-4"),
             on_submit=State.add_product,
             width=FULL,
+            
+            ),
+        width=FULL,
+    )
+def delete_item():
+    return rx.vstack(
+        rx.hstack(
+            rx.icon(tag="delete"),
+            rx.heading("Delete a Product", size="md"),
+            rx.spacer(),
+            width=FULL,
+        ),
+        rx.form(
+            rx.box(
+                rx.vstack(
+                    field_input(State.input_name_delete, "Product Name"),
+                ),
+                padding="15px",
+                border="#e2e8f0 solid 2px",
+                borderRadius="10px",
+                 background="white"
+            ),
+            rx.hstack(rx.spacer(), rx.button("Delete Product", type_="submit", ), class_name="mt-4"),
+            on_submit=(lambda event: State.delete_product(event)),
+            width=FULL,
+           
+
         ),
         width=FULL,
+        
     )
 
 
 def index() -> rx.Component:
     return rx.center(
         rx.vstack(
+            rx.hstack(
             rx.heading("E-Commerce Inventory"),
+            rx.vstack(
+            rx.button("Export", 
+                      on_click=State.export,
+                      
+                      ),
+            class_name="mt-4",
+            ),
+            ),
             inventory(),
             add_item(),
+            delete_item(),
             rx.spacer(),
             width=PAGE_WIDTH,
-            height="70%",
+            height="100%",
         ),
         height="100vh",
+        background="rgb(255,149,0) linear-gradient(0deg, rgba(255,149,0,1) 0%, rgba(255,226,0,1) 35%, rgba(255,235,0,1) 100%)",
+        color=""
     )
 
 
